@@ -2507,3 +2507,981 @@ Enrollment Generation creates Audit Events recording:
 > Enrollment Generation creates operational records.
 >
 > Financial records remain intentionally absent until staff complete the Tuition workflow.
+---
+
+# 27. Financial Architecture Overview
+
+The financial architecture separates four related but distinct concerns:
+
+1. Financial Aid information
+2. Tuition calculation
+3. Responsibility allocation
+4. Contract and Admire completion
+
+These domains interact, but they must not be collapsed into one record.
+
+```text
+Student
+│
+├── Financial Aid Profile
+│   └── Financial Aid Submissions
+│
+└── Enrollment
+    ├── Financial Aid Requirement
+    ├── Admire Status
+    │
+    └── Enrollment Segment
+        └── Tuition Package Versions
+            ├── Tuition Package Lines
+            ├── Responsibility Allocations
+            └── Tuition Contracts
+# 28. Student Financial Aid Profile
+
+## 28.1 Purpose
+
+The Student Financial Aid Profile is the permanent institutional record of a Student's Financial Aid history.
+
+Unlike Tuition, which is recreated each Academic Year, Financial Aid information is generally long-lived.
+
+A Student will normally complete one Financial Aid Application that remains valid until staff determine that updated information is required.
+
+The Financial Aid Profile provides continuity across Academic Years while allowing each Enrollment to independently determine whether the existing information satisfies that year's requirements.
+
+---
+
+## 28.2 Design Philosophy
+
+The Financial Aid Profile answers:
+
+> **What Financial Aid information do we currently have on file for this Student?**
+
+The Enrollment Financial Aid Requirement answers:
+
+> **Does this Academic Year's Enrollment require new Financial Aid information?**
+
+These are intentionally different questions.
+
+The system must never duplicate Financial Aid history inside annual Enrollment records.
+
+---
+
+## 28.3 Ownership
+
+The Financial Aid Profile belongs directly to one Student.
+
+Relationship:
+
+```text
+Student
+│
+└── Financial Aid Profile
+        │
+        ├── Submission 1
+        ├── Submission 2
+        ├── Submission 3
+        └── Current Submission
+```
+
+A Student may have:
+
+- no Financial Aid Profile
+- one Financial Aid Profile
+
+The Profile may contain multiple historical submissions.
+
+Only one submission may be Current.
+
+---
+
+## 28.4 Responsibilities
+
+The Financial Aid Profile is responsible for:
+
+- Maintaining Financial Aid history
+- Identifying the Current Submission
+- Recording whether a replacement has been requested
+- Recording review history
+- Providing Financial Aid information to future Enrollments
+
+It is **not** responsible for:
+
+- Annual workflow
+- Scholarships
+- Tuition
+- Contracts
+- Admire
+
+Those belong elsewhere.
+
+---
+
+## 28.5 Core Fields
+
+Suggested fields:
+
+- Student
+- Current Submission
+- Current Submission Date
+- Current Submission Status
+- Replacement Required
+- Replacement Requested Date
+- Replacement Requested By
+- Replacement Reason
+- Last Reviewed Date
+- Last Reviewed By
+- Internal Notes
+
+The detailed answers belong to the Financial Aid Submission.
+
+---
+
+## 28.6 Current Submission
+
+The Current Submission is the submission staff consider valid today.
+
+Example:
+
+```text
+Financial Aid Profile
+
+Current Submission
+
+↓
+
+March 2026 Submission
+```
+
+Multiple future Enrollments may reference the same Current Submission.
+
+Example:
+
+```text
+2026–2027 Enrollment
+
+↓
+
+March 2026 Submission
+
+2027–2028 Enrollment
+
+↓
+
+March 2026 Submission
+```
+
+The system should not create duplicate Financial Aid records simply because a new Academic Year begins.
+
+---
+
+## 28.7 Replacement Required
+
+Staff may determine that the existing submission is no longer sufficient.
+
+Reasons include:
+
+- Family financial circumstances changed
+- Policy requires updated information
+- Missing information
+- Supporting documentation expired
+- Staff request
+- Other administrative reason
+
+When Replacement Required is set:
+
+- The existing Submission remains Current.
+- The Student Financial Aid history remains unchanged.
+- Future Enrollments require a replacement before Financial Aid workflow can be completed.
+
+---
+
+## 28.8 Historical Integrity
+
+The Financial Aid Profile must preserve complete historical information.
+
+Example:
+
+```text
+Submission A
+March 2026
+
+↓
+
+Current
+
+↓
+
+Submission B
+June 2028
+
+↓
+
+Current
+
+↓
+
+Submission A
+
+Superseded
+```
+
+Submission A is never deleted.
+
+---
+
+## 28.9 Future Integration
+
+The Financial Aid Profile is expected to integrate with:
+
+- Enrollment
+- Tuition
+- Scholarship recommendations
+- Secure parent portal
+- Email notifications
+- Workflow engine
+
+without changing its ownership.
+
+---
+
+## 28.10 Business Rules
+
+A Financial Aid Profile:
+
+- belongs to exactly one Student
+- may contain many submissions
+- has only one Current Submission
+- preserves every prior submission
+- never overwrites historical submissions
+- survives Student status changes
+- survives Enrollment changes
+
+---
+
+## 28.11 Design Decision
+
+> Financial Aid belongs to the Student because Financial Aid history spans multiple Academic Years.
+>
+> Annual Enrollment determines whether that history is sufficient for the current year's workflow.
+
+---
+
+## 28.12 AI Implementation Notes
+
+Aggregate Root:
+
+```
+Student
+```
+
+Child Entity:
+
+```
+FinancialAidProfile
+```
+
+Preferred relationships:
+
+```
+Student
+
+↓
+
+FinancialAidProfile
+
+↓
+
+FinancialAidSubmission
+```
+
+Never:
+
+- duplicate submissions into Enrollment
+- overwrite historical submissions
+- store Financial Aid answers on Student
+
+Always:
+
+- preserve every submission
+- reference the current submission
+- audit replacement requests
+# 29. Financial Aid Submission
+
+## 29.1 Purpose
+
+A Financial Aid Submission represents the exact Financial Aid application submitted by the responsible party.
+
+Unlike the Student Financial Aid Profile, which is a living institutional record, the Submission is an immutable snapshot.
+
+Once submitted, it becomes part of the permanent institutional record.
+
+---
+
+## 29.2 Design Philosophy
+
+The submitted application is a historical document.
+
+Staff may:
+
+- review it
+- annotate it
+- reference it
+- request a replacement
+
+Staff may **never** alter what was originally submitted.
+
+If information changes, the Student record is updated or a new Submission is requested.
+
+---
+
+## 29.3 Ownership
+
+Every Financial Aid Submission belongs to exactly one Student Financial Aid Profile.
+
+Relationship:
+
+```text
+Student
+│
+└── Financial Aid Profile
+        │
+        ├── Submission A
+        ├── Submission B
+        └── Submission C
+```
+
+The Profile determines which Submission is Current.
+
+---
+
+## 29.4 Submission Contents
+
+Each Submission contains:
+
+- Submission Date
+- Submission Time
+- Submitted By
+- Source Form
+- Source Form Version
+- All submitted answers
+- Uploaded documents
+- Supporting attachments
+- Digital acknowledgements
+- Submission metadata
+
+Future versions may include digital signatures.
+
+---
+
+## 29.5 Submission Status
+
+Suggested statuses:
+
+- Draft
+- Submitted
+- Current
+- Superseded
+- Withdrawn
+
+Drafts exist only prior to submission.
+
+Submitted records immediately become immutable.
+
+---
+
+## 29.6 Immutability
+
+Once submitted:
+
+The following may never change:
+
+- submitted answers
+- uploaded files
+- timestamps
+- acknowledgements
+- calculated values stored within the submission
+
+Corrections must be handled through:
+
+- Student record updates
+- Staff review notes
+- Replacement Submission
+
+---
+
+## 29.7 Replacement Submission
+
+When updated Financial Aid information is required:
+
+1. A new Submission is created.
+2. The previous Current Submission becomes Superseded.
+3. The new Submission becomes Current.
+4. Historical references remain unchanged.
+
+Nothing is overwritten.
+
+---
+
+## 29.8 Historical References
+
+Historical Enrollments continue referencing the Submission that satisfied that year's requirements.
+
+Example:
+
+```text
+2026–2027 Enrollment
+
+↓
+
+Submission A
+
+2027–2028 Enrollment
+
+↓
+
+Submission A
+
+2028–2029 Enrollment
+
+↓
+
+Submission B
+```
+
+Changing the Current Submission does not rewrite historical Enrollment records.
+
+---
+
+## 29.9 Attachments
+
+Attachments belong to the Submission.
+
+Examples include:
+
+- tax returns
+- W-2s
+- pay stubs
+- supporting letters
+- additional documentation
+
+Future attachments added by staff belong to the Student or Review record rather than altering the original Submission.
+
+---
+
+## 29.10 Staff Review
+
+Staff may associate review information with a Submission.
+
+Examples:
+
+- reviewed by
+- review date
+- notes
+- missing information
+- clarification requested
+
+These are separate records.
+
+The Submission itself never changes.
+
+---
+
+## 29.11 Business Rules
+
+A Financial Aid Submission:
+
+- belongs to one Financial Aid Profile
+- is immutable
+- may become Superseded
+- may never be edited
+- may never be physically deleted through ordinary operations
+- preserves every attachment
+- preserves every submitted answer
+
+---
+
+## 29.12 Design Decision
+
+> The submitted Financial Aid application is treated like a signed paper document.
+>
+> Staff may evaluate it, but they do not rewrite history.
+
+---
+
+## 29.13 AI Implementation Notes
+
+Aggregate:
+
+```
+FinancialAidProfile
+    │
+    └── FinancialAidSubmission
+```
+
+Never:
+
+- edit submitted answers
+- replace attachments
+- overwrite historical metadata
+
+Always:
+
+- create new submissions
+- preserve prior submissions
+- audit supersession
+- reference submissions rather than copying their data
+# 30. Enrollment Financial Aid Requirement
+
+## 30.1 Purpose
+
+The Enrollment Financial Aid Requirement represents the Financial Aid workflow for one Academic Year.
+
+It answers a different question than the Student Financial Aid Profile.
+
+The Student Financial Aid Profile answers:
+
+> "What Financial Aid information do we have on file?"
+
+The Enrollment Financial Aid Requirement answers:
+
+> "Has this Enrollment satisfied its Financial Aid requirement?"
+
+This distinction is fundamental to the architecture.
+
+---
+
+## 30.2 Ownership
+
+Each Enrollment owns exactly one Financial Aid Requirement.
+
+Relationship:
+
+```text
+Enrollment
+│
+└── Financial Aid Requirement
+```
+
+The Requirement references:
+
+- Student Financial Aid Profile
+- Current Financial Aid Submission
+
+It does not own either.
+
+---
+
+## 30.3 Responsibilities
+
+The Financial Aid Requirement is responsible for:
+
+- determining whether Financial Aid is required
+- tracking annual workflow
+- referencing the controlling Submission
+- requesting replacements
+- recording completion
+- recording waivers
+
+It is **not** responsible for:
+
+- storing submitted answers
+- storing historical Financial Aid information
+- calculating scholarships
+
+---
+
+## 30.4 Core Fields
+
+Suggested fields:
+
+- Enrollment
+- Financial Aid Required
+- Referenced Submission
+- Replacement Required
+- Requirement Status
+- Request Sent Date
+- Submission Received Date
+- Reviewed By
+- Review Date
+- Review Status
+- Review Notes
+- Requested Clarifications
+- Recommended Scholarship
+- Approved Scholarship
+- Decision Reason
+- Approved By
+- Approval Date
+- Review Completed Date
+- Waived
+- Waived By
+- Waived Date
+- Waiver Reason
+- Internal Notes
+
+The approved scholarship amount is not the authoritative financial amount.
+
+The actual scholarship affecting the Student’s obligation must be recorded as a line in the controlling Tuition Package.
+
+---
+
+## 30.5 Requirement Status
+
+Suggested workflow:
+
+- Not Applicable
+- Not Requested
+- Requested
+- Sent
+- Received
+- Under Review
+- Completed
+- Waived
+
+These statuses represent workflow only.
+
+They never modify the underlying Submission.
+
+---
+
+## 30.6 Carry Forward
+
+When a new Enrollment is created:
+
+The system checks the Student Financial Aid Profile.
+
+If:
+
+- Current Submission exists
+- Replacement is not required
+
+then the Enrollment references the existing Submission.
+
+No duplicate Submission is created.
+
+---
+
+## 30.7 Replacement Required
+
+If staff require updated Financial Aid:
+
+The Requirement becomes incomplete.
+
+Example:
+
+```text
+Financial Aid
+
+↓
+
+Replacement Required
+
+↓
+
+Waiting for Submission
+```
+
+The previous Submission remains part of the Student history until replaced.
+
+---
+
+## 30.8 Waiver
+
+Authorized staff may waive the annual Financial Aid requirement.
+
+Examples:
+
+- Full Tuition
+- Administrative Exception
+- Other approved reason
+
+Waiver records:
+
+- User
+- Date
+- Reason
+- Previous Status
+
+Every waiver creates an Audit Event.
+
+---
+
+## 30.9 Completion
+
+Financial Aid is considered complete when one of the following is true:
+
+- Requirement is Not Applicable
+- Existing Submission satisfies the requirement
+- New Submission has been received and accepted
+- Requirement has been waived
+
+Enrollment Completion uses this result.
+
+---
+
+## 30.10 Review Outcome
+
+The annual Financial Aid review belongs to the Enrollment Financial Aid Requirement.
+
+It may record:
+
+- Reviewer
+- Review date
+- Clarifications requested
+- Recommended scholarship
+- Approved scholarship
+- Decision reason
+- Approval metadata
+- Internal notes
+
+The review explains the Financial Aid decision.
+
+The controlling Tuition Package records the actual financial effect.
+
+If the approved scholarship later changes:
+
+1. The Financial Aid Requirement review is updated with full audit history.
+2. A new Tuition Package version is created.
+3. The new scholarship amount is recorded as a Tuition Package Line.
+4. Admire Status is reset if the net tuition amount changes.
+5. A new Tuition Contract may be required.
+
+## 30.11 Relationship to Enrollment
+
+The Enrollment Dashboard should summarize Financial Aid using:
+
+- Current Status
+- Referenced Submission Date
+- Replacement Required
+- Outstanding Actions
+
+Staff should not need to open the Student Financial Aid Profile simply to determine annual progress.
+
+---
+
+## 30.12 Business Rules
+
+An Enrollment Financial Aid Requirement:
+
+- belongs to one Enrollment
+- references one controlling Submission
+- may require a replacement
+- may be waived
+- may not modify Submission history
+- participates in Enrollment Completion calculations
+
+---
+
+## 30.13 Design Decision
+
+> The Enrollment owns the workflow.
+>
+> The Student owns the Financial Aid history.
+>
+> This separation prevents duplicated records while preserving accurate annual workflow tracking.
+
+---
+
+## 30.14 Future Integrations
+
+Future integrations include:
+
+- Parent Portal
+- Workflow Engine
+- Email Notifications
+- Scholarship Recommendation Engine
+- Secure Document Upload
+- Automated Reminder System
+
+These integrations should operate through the Requirement rather than directly manipulating the Student Financial Aid Profile.
+
+---
+
+## 30.15 AI Implementation Notes
+
+Aggregate:
+
+```
+Enrollment
+│
+└── FinancialAidRequirement
+```
+
+Reference only:
+
+```
+Student
+│
+└── FinancialAidProfile
+```
+
+Never:
+
+- duplicate submissions
+- copy Financial Aid answers into Enrollment
+- update Submission contents
+
+Always:
+
+- reference the controlling Submission
+- calculate workflow completion
+- audit waivers
+- preserve historical references
+# 31. Financial Aid Review Outcome
+
+## 31.1 Purpose
+
+The Financial Aid Review Outcome records the administrative evaluation of the Financial Aid information referenced by one Enrollment.
+
+It explains:
+
+- Who reviewed the information
+- When it was reviewed
+- Whether clarification was requested
+- What scholarship was recommended
+- What scholarship was approved
+- Why the decision was made
+
+The Review Outcome belongs to the Enrollment Financial Aid Requirement.
+
+It is not a separate aggregate and does not own the Financial Aid Submission.
+
+---
+
+## 31.2 Ownership
+
+The Review Outcome is part of one Enrollment Financial Aid Requirement.
+
+Relationship:
+
+```text
+Enrollment
+
+↓
+
+Financial Aid Requirement
+
+↓
+
+Review Outcome
+## 31.3 Suggested Fields
+
+- Reviewed By
+- Review Date
+- Review Status
+- Review Notes
+- Clarification Requested
+- Clarification Requested Date
+- Clarification Received Date
+- Recommended Scholarship
+- Approved Scholarship
+- Decision Reason
+- Approved By
+- Approval Date
+- Replacement Review Required
+- Internal Notes
+
+---
+
+## 31.4 Review Status
+
+Suggested statuses:
+
+- Not Started
+- In Review
+- Clarification Requested
+- Ready for Decision
+- Approved
+- Declined
+- Completed
+- Superseded
+
+These statuses describe the review process only.
+
+They do not modify the submitted Financial Aid application.
+
+---
+
+## 31.5 Scholarship Recommendation
+
+The Review Outcome may record:
+
+- Recommended Scholarship
+- Approved Scholarship
+
+These values explain the administrative decision.
+
+They are **not** the authoritative financial record.
+
+The authoritative financial effect is recorded as a Tuition Package Item in the active Tuition Package Version.
+
+---
+
+## 31.6 Changes to the Decision
+
+If the approved scholarship changes:
+
+1. Record the new decision.
+2. Preserve the prior decision in Audit History.
+3. Create a new Tuition Package Version.
+4. Add or modify the Scholarship Tuition Package Item.
+5. Recalculate the package total.
+6. Reset Admire Status if the net tuition changes.
+7. Generate a replacement Tuition Contract if required.
+
+---
+
+## 31.7 Clarification Requests
+
+Staff may request clarification without modifying the original Financial Aid Submission.
+
+Clarifications may be resolved by:
+
+- Staff Notes
+- Communications
+- Additional Attachments
+- A replacement Financial Aid Submission
+
+The original submission always remains unchanged.
+
+---
+
+## 31.8 Business Rules
+
+A Review Outcome:
+
+- belongs to one Enrollment Financial Aid Requirement
+- references one Financial Aid Submission
+- may recommend a scholarship
+- may approve a scholarship
+- never changes submitted answers
+- never directly changes tuition
+- always preserves review history
+
+---
+
+## 31.9 Design Decision
+
+> Financial Aid Review explains **why** a scholarship was approved.
+>
+> The Tuition Package records **what** financial obligation the Student ultimately has.
+
+This keeps business reasoning separate from financial accounting.
+
+---
+
+## 31.10 AI Implementation Notes
+
+Implement Review Outcome as a child object of the Enrollment Financial Aid Requirement.
+
+Do not implement it as a separate aggregate.
+
+Never:
+
+- edit submitted Financial Aid answers
+- calculate balances from the Review
+- duplicate scholarship amounts elsewhere
+
+Always:
+
+- preserve review history
+- audit decision changes
+- create a new Tuition Package Version when an approved scholarship changes
